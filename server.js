@@ -17,7 +17,7 @@ if (!slackVerificationToken || !slackAccessToken) {
 
 // Create the adapter using the app's verification token
 const slackInteractions = createMessageAdapter(
-  process.env.SLACK_VERIFICATION_TOKEN
+  process.env.SLACK_SIGNING_SECRET
 );
 
 // Create a Slack Web API client
@@ -25,14 +25,14 @@ const web = new WebClient(slackAccessToken);
 
 // Initialize an Express application
 const app = express();
-app.use(bodyParser.urlencoded({ extended: false }));
 
 // Attach the adapter to the Express application as a middleware
 app.use('/slack/actions', slackInteractions.expressMiddleware());
+// app.use(express.urlencoded({ extended: false }));
 
+app.use(bodyParser.urlencoded({ extended: false }));
 // Attach the slash command handler
 app.post('/slack/commands', slackSlashCommand);
-
 // Start the express application server
 const port = process.env.PORT || 0;
 http.createServer(app).listen(port, () => {
@@ -70,6 +70,10 @@ slackInteractions.action('accept_tos', (payload, respond) => {
         text: 'An error occurred while recording your agreement choice.'
       });
     });
+
+  respond({
+    text: 'An error occurred while recording your agreement choice.'
+  });
 
   // Before the work completes, return a message object that is the same as the original but with
   // the interactive elements removed.
@@ -248,11 +252,14 @@ const dialog = {
 
 // Slack slash command handler
 function slackSlashCommand(req, res, next) {
+  console.log('TCL: slackSlashCommand -> req', req.body.token);
+  console.log('hello');
   if (
     req.body.token === slackVerificationToken &&
     req.body.command === '/interactive-example'
   ) {
     const type = req.body.text.split(' ')[0];
+    console.log('Hello');
     if (type === 'button') {
       res.json(interactiveButtons);
     } else if (type === 'menu') {
@@ -265,15 +272,18 @@ function slackSlashCommand(req, res, next) {
           dialog
         })
         .catch(error => {
+          console.log('TCL: slackSlashCommand -> error', error);
           return axios.post(req.body.response_url, {
             text: `An error occurred while opening the dialog: ${error.message}`
           });
         })
         .catch(console.error);
     } else {
+      console.log('Sending command instructions?');
       res.send('Use this command followed by `button`, `menu`, or `dialog`.');
     }
   } else {
+    console.log('Error here?');
     next();
   }
 }

@@ -11,6 +11,7 @@
   "author": "Sebastian Källstedt <sebastian.kallstedt@codebet.se>",
   "license": "MIT",
   "dependencies": {
+    "@slack/bolt": "^1.5.0",
     "@slack/client": "^4.1.0",
     "@slack/interactive-messages": "*",
     "axios": "^0.18.0",
