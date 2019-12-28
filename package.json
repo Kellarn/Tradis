@@ -16,7 +16,9 @@
     "@slack/interactive-messages": "*",
     "axios": "^0.18.0",
     "body-parser": "^1.18.2",
+    "crypto": "^1.0.1",
     "dotenv": "^5.0.1",
-    "express": "^4.16.3"
+    "express": "^4.16.3",
+    "tsscmp": "^1.0.6"
   }
 }

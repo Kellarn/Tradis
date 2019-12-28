@@ -5,6 +5,7 @@ const { createMessageAdapter } = require('@slack/interactive-messages');
 const { WebClient } = require('@slack/client');
 const { users, neighborhoods } = require('./models');
 const axios = require('axios');
+const signature = require('./verifySignature');
 
 // Read the verification token from the environment variables
 const slackVerificationToken = process.env.SLACK_VERIFICATION_TOKEN;
@@ -26,13 +27,22 @@ const web = new WebClient(slackAccessToken);
 // Initialize an Express application
 const app = express();
 
+const rawBodyBuffer = (req, res, buf, encoding) => {
+  if (buf && buf.length) {
+    req.rawBody = buf.toString(encoding || 'utf8');
+  }
+};
+
 // Attach the adapter to the Express application as a middleware
 app.use('/slack/actions', slackInteractions.expressMiddleware());
-// app.use(express.urlencoded({ extended: false }));
 
-app.use(bodyParser.urlencoded({ extended: false }));
+// app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.urlencoded({ verify: rawBodyBuffer, extended: true }));
+app.use(bodyParser.json({ verify: rawBodyBuffer }));
+
 // Attach the slash command handler
 app.post('/slack/commands', slackSlashCommand);
+
 // Start the express application server
 const port = process.env.PORT || 0;
 http.createServer(app).listen(port, () => {
@@ -255,8 +265,11 @@ function slackSlashCommand(req, res, next) {
   console.log('TCL: slackSlashCommand -> req', req.body.token);
   console.log('hello');
   if (
-    req.body.token === slackVerificationToken &&
-    req.body.command === '/interactive-example'
+    // req.body.token === slackVerificationToken &&
+    // req.body.command === '/interactive-example'
+
+    signature.isVerified(req)
+    // res.sendStatus(404);
   ) {
     const type = req.body.text.split(' ')[0];
     console.log('Hello');
@@ -283,7 +296,7 @@ function slackSlashCommand(req, res, next) {
       res.send('Use this command followed by `button`, `menu`, or `dialog`.');
     }
   } else {
-    console.log('Error here?');
+    res.sendStatus(404);
     next();
   }
 }
