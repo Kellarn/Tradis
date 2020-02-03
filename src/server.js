@@ -2,10 +2,13 @@ const http = require('http');
 const express = require('express');
 const bodyParser = require('body-parser');
 const { createMessageAdapter } = require('@slack/interactive-messages');
-const { WebClient } = require('@slack/client');
+const { WebClient } = require('@slack/web-api');
 const { users, neighborhoods } = require('./models');
 const axios = require('axios');
 const signature = require('./verifySignature');
+const connection = require('./tradfri/connection');
+const deviceChanger = require('./tradfri/deviceChanger');
+const delay = require('delay');
 
 // Read the verification token from the environment variables
 const slackVerificationToken = process.env.SLACK_VERIFICATION_TOKEN;
@@ -220,20 +223,24 @@ const interactiveButtons = {
 };
 
 const interactiveMenu = {
-  text: 'San Francisco is a diverse city with many different neighborhoods.',
-  response_type: 'in_channel',
-  attachments: [
+  type: 'modal',
+  submit: {
+    type: 'plain_text',
+    text: 'Submit',
+    emoji: true
+  },
+  blocks: [
     {
-      text: 'Explore San Francisco',
-      callback_id: 'pick_sf_neighborhood',
-      actions: [
-        {
-          name: 'neighborhood',
-          text: 'Choose a neighborhood',
-          type: 'select',
-          data_source: 'external'
-        }
-      ]
+      type: 'input',
+      element: {
+        type: 'plain_text_input',
+        multiline: true
+      },
+      label: {
+        type: 'plain_text',
+        text: 'Label',
+        emoji: true
+      }
     }
   ]
 };
@@ -260,39 +267,188 @@ const dialog = {
   ]
 };
 
-// Slack slash command handler
-function slackSlashCommand(req, res, next) {
-  console.log('TCL: slackSlashCommand -> req', req.body.token);
-  console.log('hello');
-  if (
-    // req.body.token === slackVerificationToken &&
-    // req.body.command === '/interactive-example'
+getAndPrintDevices = async () => {
+  const tradfri = await connection.getConnection();
+  tradfri.observeDevices();
 
-    signature.isVerified(req)
-    // res.sendStatus(404);
-  ) {
-    const type = req.body.text.split(' ')[0];
-    console.log('Hello');
+  await delay(1000);
+
+  const deviceInfo = {
+    type: 'modal',
+    title: {
+      type: 'plain_text',
+      text: 'Trådbot',
+      emoji: true
+    },
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '*Welcome to Trådbot*\n*Please choose a device:*'
+        }
+      }
+    ]
+  };
+
+  const basicInfo = {
+    type: 'section',
+    block_id: '',
+    text: {
+      type: 'mrkdwn',
+      text: ''
+    }
+  };
+
+  const infoArray = [];
+  console.log(tradfri.devices);
+  for (const deviceId in tradfri.devices) {
+    const device = await tradfri.devices[deviceId];
+    const info = await printDeviceInfo(device);
+    console.log('TCL: getAndPrintDevices -> info', info);
+
+    if (info !== undefined) {
+      const basicInfo = {
+        type: 'section',
+        block_id: '',
+        text: {
+          type: 'mrkdwn',
+          text: info.name
+        }
+      };
+
+      const currentInfo = {
+        type: 'section',
+        fields: []
+      };
+
+      let infoObject = {
+        text: `*Instance ID*\n ${info.instanceId}`,
+        type: 'mrkdwn'
+      };
+      currentInfo.fields.push(infoObject);
+      infoObject = {
+        text: `*On/Off*\n ${info.onOff}`,
+        type: 'mrkdwn'
+      };
+      currentInfo.fields.push(infoObject);
+      infoObject = {
+        text: `*Spectrum*\n ${info.spectrum}`,
+        type: 'mrkdwn'
+      };
+      currentInfo.fields.push(infoObject);
+      infoObject = {
+        text: `*Dimmer*\n ${info.dimmer}`,
+        type: 'mrkdwn'
+      };
+      currentInfo.fields.push(infoObject);
+      infoObject = {
+        text: `*Color*\n #${info.color}`,
+        type: 'mrkdwn'
+      };
+      currentInfo.fields.push(infoObject);
+
+      deviceInfo.blocks.push(basicInfo);
+      deviceInfo.blocks.push(currentInfo);
+
+      const textInput = {
+        type: 'input',
+        element: {
+          type: 'plain_text_input',
+          multiline: true
+        },
+        label: {
+          type: 'plain_text',
+          text: 'Label',
+          emoji: true
+        }
+      };
+
+      deviceInfo.blocks.push(textInput);
+
+      const divider = {
+        type: 'divider'
+      };
+
+      deviceInfo.blocks.push(divider);
+      console.log('TCL: getAndPrintDevices -> deviceInfo', deviceInfo);
+    }
+  }
+  return deviceInfo;
+};
+
+function printDeviceInfo(device) {
+  switch (device.type) {
+    case 0: // remote
+    case 4: // sensor
+      console.log(
+        device.instanceId,
+        device.name,
+        `battery ${device.deviceInfo.battery}%`
+      );
+      break;
+    case 2: // light
+      let lightInfo = device.lightList[0];
+      console.log('TCL: printDeviceInfo -> lightInfo', lightInfo);
+      let info = {
+        instanceId: device.instanceId,
+        name: device.name,
+        onOff: lightInfo.onOff,
+        spectrum: lightInfo.spectrum,
+        dimmer: lightInfo.dimmer,
+        color: lightInfo.color,
+        colorTemperature: lightInfo.colorTemperature
+      };
+      console.log(
+        device.instanceId,
+        device.name,
+        lightInfo.onOff ? 'On' : 'Off',
+        JSON.stringify(info)
+      );
+      return info;
+    case 3: // plug
+      console.log(
+        device.instanceId,
+        device.name,
+        device.plugList[0].onOff ? 'On' : 'Off'
+      );
+      break;
+    default:
+      console.log(device.instanceId, device.name, 'unknown type', device.type);
+      console.log(device);
+  }
+}
+
+// Slack slash command handler
+async function slackSlashCommand(req, res, next) {
+  console.log('TCL: slackSlashCommand -> req', req.body);
+  // const payload = JSON.parse(req);
+  const { command, text } = req.body;
+  if (signature.isVerified(req) && command === '/trådbot') {
+    const type = text.split(' ')[0];
     if (type === 'button') {
       res.json(interactiveButtons);
     } else if (type === 'menu') {
       res.json(interactiveMenu);
+    } else if (type === 'devices') {
+      const devices = await getAndPrintDevices();
+      res.json(devices);
     } else if (type === 'dialog') {
       res.send();
-      web.dialog
+      web.views
         .open({
           trigger_id: req.body.trigger_id,
-          dialog
+          view: {
+            interactiveMenu
+          }
         })
         .catch(error => {
-          console.log('TCL: slackSlashCommand -> error', error);
           return axios.post(req.body.response_url, {
             text: `An error occurred while opening the dialog: ${error.message}`
           });
         })
         .catch(console.error);
     } else {
-      console.log('Sending command instructions?');
       res.send('Use this command followed by `button`, `menu`, or `dialog`.');
     }
   } else {

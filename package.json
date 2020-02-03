@@ -5,7 +5,7 @@
   "description": "Slack interactive message server together with tradfri devices",
   "main": "server.js",
   "scripts": {
-    "start": "node -r dotenv/config server",
+    "start": "node -r dotenv/config src/server",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Sebastian Källstedt <sebastian.kallstedt@codebet.se>",
@@ -16,9 +16,13 @@
     "@slack/interactive-messages": "*",
     "axios": "^0.18.0",
     "body-parser": "^1.18.2",
+    "conf": "^6.2.0",
     "crypto": "^1.0.1",
+    "delay": "^4.3.0",
     "dotenv": "^5.0.1",
     "express": "^4.16.3",
+    "node-tradfri-client": "^2.1.0",
+    "path": "^0.12.7",
     "tsscmp": "^1.0.6"
   }
 }
